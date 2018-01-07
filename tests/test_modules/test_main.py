@@ -1,4 +1,3 @@
-#import unittest
 from twisted.trial import unittest
 from twisted.internet import reactor, defer, task
 from twisted.names import dns, client, server
@@ -183,7 +182,32 @@ class MainTester(unittest.TestCase):
             self.assertEqual(answer.payload.dottedQuad(), '2.3.4.5')
         p.addCallback(callBack)
         return p
-    
+
+    def test_resolving_wild_card(self):
+        """
+        Full testing of wildcarding is done in test_dns_reply_generator.py
+        This test just checks that the full path for wild carding is supported.
+        """
+        self.serv.config['default_dns_policy'] = 'nxdomain'
+        self.serv.config['dns_server']['ip'] = '127.0.0.1'
+        self.serv.config['dns_server']['port'] = FAKE_DNS_PORT
+        self.serv.config['domain_config'] = {
+            '*.foobar.com': [ '1.2.3.4', '2.3.4.5' ]
+        }
+        self.serv.setup()
+        p = self.test_dns_client.lookupAddress('a.foobar.com')
+        def callBack(results):
+            answers, _, _ = results
+            self.assertEqual(len(answers), 2)
+            answer = answers[0]
+            self.assertEqual(answer.name.name, b"a.foobar.com")
+            self.assertEqual(answer.payload.dottedQuad(), '1.2.3.4')
+            answer = answers[1]
+            self.assertEqual(answer.name.name, b"a.foobar.com")
+            self.assertEqual(answer.payload.dottedQuad(), '2.3.4.5')
+        p.addCallback(callBack)
+        return p
+     
 class DNSHandlerTester(unittest.TestCase):
     """
     These tests verify that the DNS Handler handles packets according to 
@@ -231,7 +255,11 @@ class DNSHandlerTester(unittest.TestCase):
     def test_domain_policy_somevalue(self):
         config = { 'domain_config' : { 'foobar.com': '127.0.0.1' } }
         self._test_dyn_resp_check(config, True)
-   
+
+    def test_domain_wildcard_check(self):
+        config = { 'domain_config' : { '*.com': '127.0.0.1' } }
+        self._test_dyn_resp_check(config, True)
+    
     def test_generate_nx_answer(self):
         config = { 'default_dns_policy': 'nxdomain' }
         response_deferred = self._test_dns_reply_generation(config)
@@ -307,4 +335,5 @@ class DNSHandlerTester(unittest.TestCase):
             self.assertEqual(a.payload.dottedQuad(), '127.0.0.2')
         r.addCallback(callback)
         return r
-   
+
+

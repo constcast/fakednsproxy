@@ -18,13 +18,18 @@ class DNSHandler(object):
         if 'domain_config' in self.config:
             domain_configs = self.config['domain_config']
             query_name = str(query.name)
-            if query_name in domain_configs.keys():
-                if domain_configs[query_name] == 'forward' or \
-                    domain_configs[query_name] == 'nxdomain' or \
-                    domain_configs[query_name] == 'default_value':
-                        return domain_configs[query_name]
+            try:
+                d = core.dns_reply_generators.DNSReplyGenerator(self.config)
+                domain_config = d.getDomainConfigEntry(query_name)
+                if domain_config == 'forward' or \
+                    domain_config == 'nxdomain' or \
+                    domain_config == 'default_value':
+                        return domain_config
                 else:
                     return "custom_value"
+            except:
+                # fall through default policy
+                pass
         return self.config['default_dns_policy'] 
 
     def _dynamicResponseRequired(self, query):

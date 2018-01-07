@@ -1,0 +1,7 @@
+listening_info:
+  ip: 127.0.0.1
+  port: 1025
+dns_server: 
+  ip: 127.0.0.1
+  port: 53
+default_dns_policy: forward

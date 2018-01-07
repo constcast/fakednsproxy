@@ -1,0 +1,8 @@
+listening_info:
+  ip: 127.0.0.1
+  port: 2000
+dns_server:
+  ip: 127.0.0.1
+  port: 2000
+default_dns_policy: forward
+

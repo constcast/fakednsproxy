@@ -1,5 +1,69 @@
 import yaml
 import pprint
+import socket
+
+from twisted.names import client, dns, error, server
+
+
+class DNSAnswerConfig:
+    def __getitem__(self, key):
+        return self.value_dict[key]
+
+    def __setitem__(self, key, value):
+        self.value_dict[key] = value
+
+    def __contains__(self, key):
+        return key in self.value_dict
+
+    def isValidQueryType(self, query_type):
+        if query_type in dns.QUERY_TYPES.values():
+            return True
+        return False
+
+    def isIPv4Address(self, address):
+        try:
+            socket.inet_pton(socket.AF_INET, address)
+        except Exception as e:
+            return False
+        return True
+       
+    def isIPv6Address(self, address):
+        try:
+            socket.inet_pton(socket.AF_INET6, address)
+        except Exception as e:
+            return False
+        return True
+ 
+    def __init__(self, value):
+        self.value_dict = dict()
+        if isinstance(value, str):
+            # interpret a string value either as an IPv4 address or
+            # an IPv6 address
+            if self.isIPv4Address(value):
+                self.value_dict['A'] = value
+            elif self.isIPv6Address(value):
+                self.value_dict['AAAA'] = value
+            else:
+                raise RuntimeError("DNSAnswerDict: {} is not a valid IP "
+                                   "address".format(value))
+        elif isinstance(value, list):
+            # a list of IPv4 and IPv6 addresses
+            for address in value:
+                if self.isIPv4Address(address):
+                    self.value_dict.setdefault('A', []).append(address)
+                elif self.isIPv6Address(address):
+                    self.value_dict.setdefault('AAAA', []).append(address)
+                else:
+                    raise RuntimeError("DNSAnswerDict: {} is not a valid IP "
+                                       "address".format(address))
+        elif isinstance(value, dict):
+            for qtype in value.keys():
+                if not self.isValidQueryType(qtype):
+                    raise RuntimeError('DNSAnswerDict: Query type "{}" is not a '
+                                      'valid query type.'.format(qtype))
+            self.value_dict = value
+        
+
 
 class DNSForwardPolicies:
     def __init__(self):
@@ -22,7 +86,31 @@ class ConfigParser:
     def parse_config(self, filename):
         with open(filename, 'r') as f:
             self.config = yaml.load(f)
+        self.generate_config_objects()
         self.validate_config()
+
+    def generate_config_objects(self):
+        """
+        This method takes the dictionary stored in self.config, and replaces
+        the plaintext string domain_config, default_value, etc.
+        We have this extra indirection in the code, becausue we allow 
+        syntatic sugar in the configuration writing:
+            - A writer an just specify an IP address or list of IP
+              addresses (both V4 and V6) instead of providing a dictionary
+              with a list of A and AAAA objects
+        """
+        if 'default_dns_value' in self.config and \
+            not isinstance(self.config['default_dns_value'], DNSAnswerConfig):
+            self.config['default_dns_value'] = DNSAnswerConfig(self.config['default_dns_value'])
+        if not 'domain_config' in self.config:
+            return
+        domain_config = dict()
+        for domain, value in self.config['domain_config'].items():
+            if isinstance(value, DNSAnswerConfig):
+                domain_config[domain] = value
+            else:
+                domain_config[domain] = DNSAnswerConfig(value)
+        self.config['domain_config'] = domain_config
 
     def __getitem__(self, key):
         return self.config[key]

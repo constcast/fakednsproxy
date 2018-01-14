@@ -5,6 +5,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from core.config import ConfigParser
+from core.config import DNSAnswerConfig
 
 
 class ConfigTester(unittest.TestCase):
@@ -57,3 +58,133 @@ class ConfigTester(unittest.TestCase):
         cp['default_dns_policy' ] = 'default_value'
         with self.assertRaises(RuntimeError):
             cp.validate_config()
+
+    def test_dns_answer_generation_default_value(self):
+        cp = self.generateValidConfigParser()
+        cp['default_dns_policy' ] = 'default_value'
+        cp['default_dns_value'] = '127.0.0.1'
+        cp.generate_config_objects()
+        self.assertEqual(True, isinstance(cp['default_dns_value'], DNSAnswerConfig))
+        self.assertEqual(True, 'A' in cp['default_dns_value'])
+        self.assertEqual('127.0.0.1', cp['default_dns_value']['A'])
+
+    def test_dns_answer_generation_domain_config(self):
+        cp = self.generateValidConfigParser()
+        cp['default_dns_policy' ] = 'default_value'
+        cp['default_dns_value'] = '127.0.0.1'
+        cp['domain_config'] = {
+            'foo.com': '127.0.0.1',
+            'bar.com': [ '127.0.0.1', '127.0.0.1' ],
+            'foobar.com': {
+                'A' : '127.0.0.1',
+                'AAAA' : [ '::1', '::2' ]
+            }
+        }
+
+        cp.generate_config_objects()
+        self.assertEqual(True, isinstance(cp['domain_config'], dict))
+        domain_config = cp['domain_config']
+        self.assertEqual(True, 'bar.com' in domain_config)
+        self.assertEqual(True, 'foo.com' in domain_config)
+        self.assertEqual(True, 'foobar.com' in domain_config)
+        self.assertEqual(True, isinstance(domain_config['bar.com'], DNSAnswerConfig))
+        self.assertEqual(True, isinstance(domain_config['foo.com'], DNSAnswerConfig))
+        self.assertEqual(True, isinstance(domain_config['foobar.com'], DNSAnswerConfig))
+        # we don't test for the correct values of DNSAnswerConfig object here, 
+        # because these test should be done in DNSAnswerConfigTester.
+        # the purpose of this test is only to ensure that the object were 
+        # generated (i.e. to ensure that the ConfigObject works correctly)
+
+    def test_dns_answer_generation_duplicate_call(self):
+        cp = self.generateValidConfigParser()
+        cp['default_dns_policy' ] = 'default_value'
+        cp['default_dns_value'] = '127.0.0.1'
+        cp.generate_config_objects()
+        cp.generate_config_objects() # this is planned and should work
+        self.assertEqual(True, isinstance(cp['default_dns_value'], DNSAnswerConfig))
+        self.assertEqual(True, 'A' in cp['default_dns_value'])
+        self.assertEqual('127.0.0.1', cp['default_dns_value']['A'])
+
+
+class DNSAnswerConfigTester(unittest.TestCase):
+    def test_ip_generation(self):
+        a =  DNSAnswerConfig('127.0.0.1')
+        self.assertEqual(True, 'A' in a.value_dict)
+        self.assertEqual('127.0.0.1', a.value_dict['A'])
+
+    def test_ipv6_generation(self):
+        a = DNSAnswerConfig('::1')
+        self.assertEqual(True, 'AAAA' in a.value_dict)
+        self.assertEqual('::1', a.value_dict['AAAA'])
+
+    def test_ip_list_generation(self):
+        a =  DNSAnswerConfig(['127.0.0.1', '127.0.0.2'])
+        self.assertEqual(True, 'A' in a.value_dict)
+        self.assertEqual(2, len(a.value_dict['A']))
+        self.assertEqual('127.0.0.1', a.value_dict['A'][0])
+        self.assertEqual('127.0.0.2', a.value_dict['A'][1])
+
+    def test_ipv6_list_generation(self):
+        a =  DNSAnswerConfig(['::1', '::2'])
+        self.assertEqual(True, 'AAAA' in a.value_dict)
+        self.assertEqual(2, len(a.value_dict['AAAA']))
+        self.assertEqual('::1', a.value_dict['AAAA'][0])
+        self.assertEqual('::2', a.value_dict['AAAA'][1])
+
+    def test_ipv4_and_ipv6_list_generation(self):
+        a =  DNSAnswerConfig(['::1', '127.0.0.1', '::2', '127.0.0.2'])
+        self.assertEqual(True, 'AAAA' in a.value_dict)
+        self.assertEqual(2, len(a.value_dict['AAAA']))
+        self.assertEqual('::1', a.value_dict['AAAA'][0])
+        self.assertEqual('::2', a.value_dict['AAAA'][1])
+        self.assertEqual(True, 'A' in a.value_dict)
+        self.assertEqual(2, len(a.value_dict['A']))
+        self.assertEqual('127.0.0.1', a.value_dict['A'][0])
+        self.assertEqual('127.0.0.2', a.value_dict['A'][1])
+
+    def test_invalid_list_generation(self):
+        with self.assertRaises(RuntimeError):
+            a = DNSAnswerConfig(['::1', 'invalid_address'])
+
+
+    def test_ip_list_invalid_address(self):
+        with self.assertRaises(RuntimeError):
+            a = DNSAnswerConfig('invalid_address')
+
+    def test_is_ipv4_address(self):
+        a = DNSAnswerConfig(None)
+        self.assertEqual(True, a.isIPv4Address('127.0.0.1'))
+        self.assertEqual(False, a.isIPv4Address('invalid'))
+        self.assertEqual(False, a.isIPv4Address('::1'))
+
+    def test_is_ipv6_address(self):
+        a = DNSAnswerConfig(None)
+        self.assertEqual(False, a.isIPv6Address('127.0.0.1'))
+        self.assertEqual(False, a.isIPv6Address('invalid'))
+        self.assertEqual(True, a.isIPv6Address('::1'))
+
+    def test_is_valid_query_type(self):
+        a = DNSAnswerConfig(None)
+        self.assertEqual(True, a.isValidQueryType('A'))
+        self.assertEqual(True, a.isValidQueryType('AAAA'))
+        self.assertEqual(True, a.isValidQueryType('NS'))
+        self.assertEqual(True, a.isValidQueryType('MX'))
+        self.assertEqual(False, a.isValidQueryType('Foobar'))
+
+    def test_query_value_valid_dict(self):
+        value_dict = {
+                'A': '127.0.0.1',
+                'AAAA': [ '::1', "::2" ],
+                'NS' : [ '::1' ]
+        }
+        a = DNSAnswerConfig(value_dict)
+        self.assertEqual(value_dict, a.value_dict)
+
+    def test_query_value_invalid_dict(self):
+        value_dict = {
+                'A': '127.0.0.1',
+                'AAAAA': [ '::1', "::2" ],
+                'nonexistant' : [ '::1' ]
+        }
+        with self.assertRaises(RuntimeError):
+            a = DNSAnswerConfig(value_dict)

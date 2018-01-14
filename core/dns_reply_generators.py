@@ -6,12 +6,89 @@ class DNSReplyGenerator:
     def __init__(self, config):
         self.config = config
 
-    def generateAnswerRecord(self, query, value):
+    def generateAnswerRecords(self, query, domain_config):
         name = query.name.name
-        answer = dns.RRHeader(name=name,
-                              payload=dns.Record_A(address=value))
-        return answer
+        qtype = query.type
+        payload = None
+
+        if not qtype in dns.QUERY_TYPES:
+            raise RuntimeError("DNSReplyGenerator: received request to generate"
+                               " DNS query type {}.".format(qtype))
+
+        qtype_string = dns.QUERY_TYPES[qtype]
+        if not qtype_string in domain_config:
+            return []
+
+        answers = []
+        domain_entry = domain_config[qtype_string]
+        
+        for value in domain_entry:
+            payload = self.generateAnswerRecordPayload(qtype_string,
+                                                       value)
+            answer = dns.RRHeader(name=name,
+                                  type=qtype,
+                                  payload=payload)
+            answers.append(answer)
+        return answers
  
+    def generateAnswerRecordPayload(self, qtype_string, record_value):
+        payload = None
+        if qtype_string == 'A':
+            payload = dns.Record_A(address=record_value)
+        elif qtype_string == 'AAAA':
+            payload = dns.Record_AAAA(address=record_value)
+        elif qtype_string == 'MX':
+            payload = dns.Record_MX(name=record_value)
+        elif qtype_string == 'NS':
+            payload = dns.Record_NS(name=record_value)
+        elif qtype_string == 'MD':
+            raise NotImplementedError()
+        elif qtype_string == 'MF':
+            raise NotImplementedError()
+        elif qtype_string == 'CNAME':
+            raise NotImplementedError()
+        elif qtype_string == 'SOA':
+            raise NotImplementedError()
+        elif qtype_string == 'MB':
+            raise NotImplementedError()
+        elif qtype_string == 'MG':
+            raise NotImplementedError()
+        elif qtype_string == 'MR':
+            raise NotImplementedError()
+        elif qtype_string == 'NULL':
+            raise NotImplementedError()
+        elif qtype_string == 'WKS':
+            raise NotImplementedError()
+        elif qtype_string == 'PTR':
+            raise NotImplementedError()
+        elif qtype_string == 'HINFO':
+            raise NotImplementedError()
+        elif qtype_string == 'MINFO':
+            raise NotImplementedError()
+        elif qtype_string == 'TXT':
+            raise NotImplementedError()
+        elif qtype_string == 'RP':
+            raise NotImplementedError()
+        elif qtype_string == 'AFSDB':
+            raise NotImplementedError()
+        elif qtype_string == 'SRV':
+            raise NotImplementedError()
+        elif qtype_string == 'NAPTR':
+            raise NotImplementedError()
+        elif qtype_string == 'A6':
+            raise NotImplementedError()
+        elif qtype_string == 'DNAME':
+            raise NotImplementedError()
+        elif qtype_string == 'OPT':
+            raise NotImplementedError()
+        elif qtype_string == 'SPF':
+            raise NotImplementedError()
+        else:
+            raise RuntimeError("DNSReplyGenerator: received request to generate"
+                               " DNS query type {}.".format(qtype))
+
+        return payload 
+
     def generateReply(self, query):
         raise NotImplementedError()
 
@@ -43,23 +120,13 @@ class NXDomainReply(DNSReplyGenerator):
 
 class DefaultValueReply(DNSReplyGenerator):
     def generateReply(self, query):
-        if type(self.config['default_dns_value']) == list:
-            answers = [self.generateAnswerRecord(query, x) for x in self.config['default_dns_value']]
-        else:
-            answer = self.generateAnswerRecord(query,
-                                               self.config['default_dns_value'])
-            answers = [answer]
+        answers = self.generateAnswerRecords(query, self.config['default_dns_value'])
         return answers, [], []
 
 class CustomValueReply(DNSReplyGenerator):
     def generateReply(self, query):
         name = query.name.name.decode()
         name_config = self.getDomainConfigEntry(name)
-        if type(name_config) == list:
-            answers = [self.generateAnswerRecord(query, x) for x in name_config]
-        else:
-            answer = self.generateAnswerRecord(query,
-                                               name_config)
-            answers = [answer]
+        answers = self.generateAnswerRecords(query, name_config)
         return answers, [], []
 

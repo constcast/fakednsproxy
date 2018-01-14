@@ -123,6 +123,7 @@ class FakeDnsProxy:
 
     def setup(self):
         self.is_setup = True
+        self.config.generate_config_objects()
         self.dns_handler = DNSHandler(self.config)
 
         factory = CustomDNSServerFactory(clients=[self.dns_handler])

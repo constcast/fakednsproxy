@@ -36,13 +36,16 @@ class DNSAnswerConfig:
  
     def __init__(self, value):
         self.value_dict = dict()
+        policies = DNSForwardPolicies()
         if isinstance(value, str):
             # interpret a string value either as an IPv4 address or
             # an IPv6 address
             if self.isIPv4Address(value):
-                self.value_dict['A'] = value
+                self.value_dict['A'] = [ value ]
             elif self.isIPv6Address(value):
-                self.value_dict['AAAA'] = value
+                self.value_dict['AAAA'] = [ value ]
+            elif policies.is_valid_policy(value):
+                self.value_dict['*'] = [ value ]
             else:
                 raise RuntimeError("DNSAnswerDict: {} is not a valid IP "
                                    "address".format(value))
@@ -61,8 +64,12 @@ class DNSAnswerConfig:
                 if not self.isValidQueryType(qtype):
                     raise RuntimeError('DNSAnswerDict: Query type "{}" is not a '
                                       'valid query type.'.format(qtype))
-            self.value_dict = value
-        
+                v = value[qtype]
+                if isinstance(v, str):
+                    self.value_dict[qtype] = [ v ]
+                else:
+                    self.value_dict[qtype] = v
+
 
 
 class DNSForwardPolicies:
@@ -101,7 +108,7 @@ class ConfigParser:
         """
         if 'default_dns_value' in self.config and \
             not isinstance(self.config['default_dns_value'], DNSAnswerConfig):
-            self.config['default_dns_value'] = DNSAnswerConfig(self.config['default_dns_value'])
+                self.config['default_dns_value'] = DNSAnswerConfig(self.config['default_dns_value'])
         if not 'domain_config' in self.config:
             return
         domain_config = dict()

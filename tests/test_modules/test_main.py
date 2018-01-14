@@ -60,9 +60,14 @@ class MainTester(unittest.TestCase):
         # this will fail if it cannot open port 40000 on 127.0.0.1
         class ResolverStub(object):
             def query(self, query, timeout=None):
-                answer = dns.RRHeader(
-                        name=query.name.name,
-                        payload=dns.Record_A(address='1.2.3.4'))
+                if query.type == dns.A:
+                    answer = dns.RRHeader(
+                            name=query.name.name,
+                            payload=dns.Record_A(address='1.2.3.4'))
+                elif query.type == dns.NS:
+                    answer = dns.RRHeader(
+                            name=query.name.name,
+                            payload=dns.Record_NS(name="ns1.foobar.com"))
                 return defer.succeed(([ answer ], [], []))
  
         fake_dns_factory = server.DNSServerFactory(clients=[ResolverStub()])
@@ -144,6 +149,45 @@ class MainTester(unittest.TestCase):
         p.addCallback(callBack)
         return p
 
+    def test_resolving_default_value_defined_A_record(self):
+        self.serv.config['default_dns_policy'] = 'default_value'
+        self.serv.config['default_dns_value'] = {
+                    'A': '1.2.3.4',
+
+                }
+        self.serv.config['dns_server']['ip'] = '127.0.0.1'
+        self.serv.config['dns_server']['port'] = FAKE_DNS_PORT
+        self.serv.setup()
+        p = self.test_dns_client.lookupAddress('foobar.com')
+        def callBack(results):
+            answers, _, _ = results
+            self.assertEqual(len(answers), 1)
+            answer = answers[0]
+            self.assertEqual(answer.name.name, b"foobar.com")
+            self.assertEqual(answer.payload.dottedQuad(), '1.2.3.4')
+        p.addCallback(callBack)
+        return p
+
+    def test_resolving_default_value_defined_NS_record(self):
+        self.serv.config['default_dns_policy'] = 'default_value'
+        self.serv.config['default_dns_value'] = {
+                    'NS': 'ns1.foobar.com',
+
+                }
+        self.serv.config['dns_server']['ip'] = '127.0.0.1'
+        self.serv.config['dns_server']['port'] = FAKE_DNS_PORT
+        self.serv.setup()
+        p = self.test_dns_client.lookupNameservers('foobar.com')
+        def callBack(results):
+            answers, _, _ = results
+            self.assertEqual(len(answers), 1)
+            answer = answers[0]
+            self.assertEqual(answer.name.name, b"foobar.com")
+            self.assertEqual(answer.payload.name.name, b'ns1.foobar.com')
+        p.addCallback(callBack)
+        return p
+
+
     def test_resolving_specific_value_single_ip(self):
         self.serv.config['default_dns_policy'] = 'nxdomain'
         self.serv.config['dns_server']['ip'] = '127.0.0.1'
@@ -207,7 +251,34 @@ class MainTester(unittest.TestCase):
             self.assertEqual(answer.payload.dottedQuad(), '2.3.4.5')
         p.addCallback(callBack)
         return p
-     
+
+    def test_resolving_specific_defined_A_record(self):
+        """
+        Full testing of wildcarding is done in test_dns_reply_generator.py
+        This test just checks that the full path for wild carding is supported.
+        """
+        self.serv.config['default_dns_policy'] = 'nxdomain'
+        self.serv.config['dns_server']['ip'] = '127.0.0.1'
+        self.serv.config['dns_server']['port'] = FAKE_DNS_PORT
+        self.serv.config['domain_config'] = {
+                '*.foobar.com': { 
+                    'A': [ '1.2.3.4', '2.3.4.5'] 
+                }
+        }
+        self.serv.setup()
+        p = self.test_dns_client.lookupAddress('a.foobar.com')
+        def callBack(results):
+            answers, _, _ = results
+            self.assertEqual(len(answers), 2)
+            answer = answers[0]
+            self.assertEqual(answer.name.name, b"a.foobar.com")
+            self.assertEqual(answer.payload.dottedQuad(), '1.2.3.4')
+            answer = answers[1]
+            self.assertEqual(answer.name.name, b"a.foobar.com")
+            self.assertEqual(answer.payload.dottedQuad(), '2.3.4.5')
+        p.addCallback(callBack)
+        return p
+      
 class DNSHandlerTester(unittest.TestCase):
     """
     These tests verify that the DNS Handler handles packets according to 
@@ -215,14 +286,18 @@ class DNSHandlerTester(unittest.TestCase):
     """
 
     def _test_dyn_resp_check(self, config, assertResult):
-        dnshandler = DNSHandler(ConfigParser(config_obj=config))
+        cp = ConfigParser(config)
+        cp.generate_config_objects()
+        dnshandler = DNSHandler(cp)
         q = Query('foobar.com')
         result = dnshandler._dynamicResponseRequired(q)
         self.assertEqual(result, assertResult)
 
-    def _test_dns_reply_generation(self, config):
-        dnshandler = DNSHandler(config)
-        q = Query('domain.com')
+    def _test_dns_reply_generation(self, config, query_type):
+        cp = ConfigParser(config)
+        cp.generate_config_objects()
+        dnshandler = DNSHandler(cp)
+        q = Query('domain.com', type=query_type)
         return dnshandler._doDynamicResponse(q)
 
 
@@ -262,7 +337,7 @@ class DNSHandlerTester(unittest.TestCase):
     
     def test_generate_nx_answer(self):
         config = { 'default_dns_policy': 'nxdomain' }
-        response_deferred = self._test_dns_reply_generation(config)
+        response_deferred = self._test_dns_reply_generation(config, dns.A)
         def callback(response):
             answer, _, _ = response
             self.assertEqual(len(answer), 0)
@@ -272,7 +347,7 @@ class DNSHandlerTester(unittest.TestCase):
         config = { 'default_dns_policy': 'default_value',
                    'default_dns_value' : '127.1.2.3'
                  }
-        response_deferred = self._test_dns_reply_generation(config)
+        response_deferred = self._test_dns_reply_generation(config, dns.A)
         def callback1(response):
             answer, _, _ = response
             self.assertEqual(len(answer), 1)
@@ -286,7 +361,7 @@ class DNSHandlerTester(unittest.TestCase):
         config = { 'default_dns_policy': 'default_value',
                    'default_dns_value' : [ '1.2.3.4', '2.3.4.5' ]
                  }
-        r = self._test_dns_reply_generation(config)
+        r = self._test_dns_reply_generation(config, dns.A)
         def callback1(response):
             answer, _, _ = response
             self.assertEqual(len(answer), 2)
@@ -306,7 +381,7 @@ class DNSHandlerTester(unittest.TestCase):
                         'domain.com': '127.0.0.1',
                     }
                  }
-        r = self._test_dns_reply_generation(config)
+        r = self._test_dns_reply_generation(config, dns.A)
         def callback(response):
             answer, _, _ = response
             self.assertEqual(len(answer), 1)
@@ -323,7 +398,7 @@ class DNSHandlerTester(unittest.TestCase):
                         'domain.com': [ '127.0.0.1', '127.0.0.2' ],
                     }
                  }
-        r = self._test_dns_reply_generation(config)
+        r = self._test_dns_reply_generation(config, dns.A)
         def callback(response):
             answer, _, _ = response
             self.assertEqual(len(answer), 2)
@@ -336,4 +411,46 @@ class DNSHandlerTester(unittest.TestCase):
         r.addCallback(callback)
         return r
 
+    def test_generate_specific_answer_MX_record(self):
+        config = { 'default_dns_policy': 'default_value',
+                   'default_dns_value' : [ '1.2.3.4' ],
+                   'domain_config': {
+                        'domain.com': {
+                            'MX' : [ 'mail1.example.com', 'mail2.example.com' ]
+                        }
+                    }
+                 }
+        r = self._test_dns_reply_generation(config, dns.MX)
+        def callback(response):
+            answer, _, _ = response
+            self.assertEqual(len(answer), 2)
+            a = answer[0]
+            self.assertEqual(a.name.name, b"domain.com")
+            self.assertEqual(a.payload.name.name, b'mail1.example.com')
+            a = answer[1]
+            self.assertEqual(a.name.name, b"domain.com")
+            self.assertEqual(a.payload.name.name, b'mail2.example.com')
+        r.addCallback(callback)
+        return r
 
+    def test_generate_specific_answer_NS_record(self):
+        config = { 'default_dns_policy': 'default_value',
+                   'default_dns_value' : [ '1.2.3.4' ],
+                   'domain_config': {
+                        'domain.com': {
+                            'NS' : [ 'ns1.example.com', 'ns2.example.com' ]
+                        }
+                    }
+                 }
+        r = self._test_dns_reply_generation(config, dns.NS)
+        def callback(response):
+            answer, _, _ = response
+            self.assertEqual(len(answer), 2)
+            a = answer[0]
+            self.assertEqual(a.name.name, b"domain.com")
+            self.assertEqual(a.payload.name.name, b'ns1.example.com')
+            a = answer[1]
+            self.assertEqual(a.name.name, b"domain.com")
+            self.assertEqual(a.payload.name.name, b'ns2.example.com')
+        r.addCallback(callback)
+        return r

@@ -66,7 +66,7 @@ class ConfigTester(unittest.TestCase):
         cp.generate_config_objects()
         self.assertEqual(True, isinstance(cp['default_dns_value'], DNSAnswerConfig))
         self.assertEqual(True, 'A' in cp['default_dns_value'])
-        self.assertEqual('127.0.0.1', cp['default_dns_value']['A'])
+        self.assertEqual(['127.0.0.1'], cp['default_dns_value']['A'])
 
     def test_dns_answer_generation_domain_config(self):
         cp = self.generateValidConfigParser()
@@ -103,19 +103,19 @@ class ConfigTester(unittest.TestCase):
         cp.generate_config_objects() # this is planned and should work
         self.assertEqual(True, isinstance(cp['default_dns_value'], DNSAnswerConfig))
         self.assertEqual(True, 'A' in cp['default_dns_value'])
-        self.assertEqual('127.0.0.1', cp['default_dns_value']['A'])
+        self.assertEqual(['127.0.0.1'], cp['default_dns_value']['A'])
 
 
 class DNSAnswerConfigTester(unittest.TestCase):
     def test_ip_generation(self):
         a =  DNSAnswerConfig('127.0.0.1')
         self.assertEqual(True, 'A' in a.value_dict)
-        self.assertEqual('127.0.0.1', a.value_dict['A'])
+        self.assertEqual(['127.0.0.1'], a.value_dict['A'])
 
     def test_ipv6_generation(self):
         a = DNSAnswerConfig('::1')
         self.assertEqual(True, 'AAAA' in a.value_dict)
-        self.assertEqual('::1', a.value_dict['AAAA'])
+        self.assertEqual(['::1'], a.value_dict['AAAA'])
 
     def test_ip_list_generation(self):
         a =  DNSAnswerConfig(['127.0.0.1', '127.0.0.2'])
@@ -177,8 +177,15 @@ class DNSAnswerConfigTester(unittest.TestCase):
                 'AAAA': [ '::1', "::2" ],
                 'NS' : [ '::1' ]
         }
+
+        result_dict = {
+                'A': [ '127.0.0.1' ],
+                'AAAA': [ '::1', "::2" ],
+                'NS' : [ '::1' ]
+             
+        }
         a = DNSAnswerConfig(value_dict)
-        self.assertEqual(value_dict, a.value_dict)
+        self.assertEqual(result_dict, a.value_dict)
 
     def test_query_value_invalid_dict(self):
         value_dict = {

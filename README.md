@@ -74,14 +74,23 @@ Example:
 ### default_dns_value: (required if policy default_value was selected)
 
 Specifies which value should be returned for the *default_value* policy. 
-Valid values can either be an IP, e.g. '127.0.0.1', or a list of IPs, e.g.
-[ '127.0.0.1', '127.0.0.2' ].
+Valid values can either be
+  - an IP, e.g. '127.0.0.1',
+  - or a list of IPs, e.g. [ '127.0.0.1', '127.0.0.2' ]
+  - or a dictionary of the form <record_type>: <value>
 
     default_value: '127.0.0.1'
 
 or
 
     default_value: [ '127.0.0.1', '127.0.0.2' ]
+
+or
+
+    default_value: 
+      A: 127.0.0.1
+      MX: 127.0.0.2
+      NS: 127.0.0.3
 
 ### domain_config: (optional)
 
@@ -103,7 +112,9 @@ behavior is one of:
 Nxdomain will make FakeDnsProxy return a NXDOMAIN DNS response, forward will 
 make FakeDnsProxy to forward the request to the server defined in *dns_server*.
 A value is the value returned in the DNS response. Valid values can either be
-an IP, e.g. '127.0.0.1', or a list of IPs, e.g. [ '127.0.0.1', '127.0.0.2' ].
+  - an IP, e.g. '127.0.0.1',
+  - or a list of IPs, e.g. [ '127.0.0.1', '127.0.0.2' ]
+  - or a dictionary of the form <record_type>: <value>
 
 Domain can also use '*' as a wildcard character.
 
@@ -114,6 +125,47 @@ Domain can also use '*' as a wildcard character.
       b.com: [ '127.0.0.1', '127.0.0.2' ]
       *.com: 127.0.0.1
       *.foobar.com: 1.2.3.4
+      c.com:
+        A: 1.2.3.5
+	MX: 1.2.3.4
+
+### Supported DNS Record Types
+
+The supported record types are dependend on the DNS types supported by twisted.
+Currently, the following values are defined. FakeDnsProxy will try to take
+the value defined by the configuration for a given record. If it receives a 
+query for such a record, it will take the defined value and tries to generate
+a appropriate response record. 
+
+It is the responsibility of the writer of the configuration to ensure that the
+content provided for the record can be converted to a valid DNS Response record.
+
+- A, 
+- A6
+- AAAA
+- AFSDB
+- CNAME
+- DNAME
+- HINFO
+- MB
+- MD
+- MF
+- MG
+- MINFO
+- MR
+- MX
+- NAPTR
+- NS
+- NULL
+- OPT
+- PTR
+- RP
+- SOA
+- SPF
+- SRV
+- TXT
+- WKS
+
 
 
 Example Configurations:
@@ -132,6 +184,10 @@ Example Configurations:
       foobar.com: forward
       f.com: 127.0.0.1
       b.com: [ '127.0.0.1', '127.0.0.2' ]
+      c.com:
+        A: 1.2.3.5
+	MX: 1.2.3.4
+
 
 Testing
 -------

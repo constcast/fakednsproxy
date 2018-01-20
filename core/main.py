@@ -4,6 +4,12 @@ import core.dns_reply_generators
 from twisted.internet import reactor, defer
 from twisted.names import client, dns, error, server
 
+from twisted.logger import Logger, textFileLogObserver
+
+import sys
+import socket
+
+
 class DNSHandler(object):
     def __init__(self, config):
         self.config = config
@@ -92,15 +98,37 @@ class CustomDNSServerFactory(server.DNSServerFactory):
     are empty.
     """
     def __init__(self, authorities=None, caches=None, clients=None, verbose=0): 
+        self.logger = Logger()
         super().__init__(authorities, caches, clients, verbose)
+
+    def getAnswerDNSLogging(self, rrheader):
+        dns_record = rrheader.payload
+        if isinstance(dns_record, dns.Record_A):
+            result =  "Name: {} - {}".format(rrheader.name,
+                                             dns_record.dottedQuad())
+           
+        elif isinstance(dns_record, dns.Record_AAAA): 
+            result =  "Name: {} - {}".format(rrheader.name,
+                                             socket.inet_ntop(socket.AF_INET6,
+                                                              dns_record.address))
+        else:
+            result = "Name: {} - {}".format(rrheader.name, dns_record.name)
+        return result
 
     def gotResolverResponse(self, response, protocol, message, address):
         ans, auth, add = response
         if len(ans) > 0:
             
+            for a in ans:
+                ans_string = self.getAnswerDNSLogging(a)
+                self.logger.info("Received Request from '{}:{}'"
+                                 ", Reply: {}.".format(address[0], address[1], 
+                                                    ans_string))
+            
             # here we go to the parent as there is an answer
             return super().gotResolverResponse(response, protocol, message, address)
 
+        self.logger.info("Received Request from '{}:{}', Answer: NXDomain".format(address[0], address[1]))
         response = self._responseFromMessage(
                                 message=message, rCode=dns.ENAME,
                                 answers=ans, authority=auth, additional=add)

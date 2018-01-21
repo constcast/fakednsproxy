@@ -101,34 +101,50 @@ class CustomDNSServerFactory(server.DNSServerFactory):
         self.logger = Logger()
         super().__init__(authorities, caches, clients, verbose)
 
-    def getAnswerDNSLogging(self, rrheader):
+    def getDNSAnswerRecordLog(self, rrheader):
         dns_record = rrheader.payload
+        result = "{} - {} - ".format(dns.QUERY_TYPES[rrheader.type],
+                                  rrheader.name)
         if isinstance(dns_record, dns.Record_A):
-            result =  "Name: {} - {}".format(rrheader.name,
-                                             dns_record.dottedQuad())
-           
+            result += dns_record.dottedQuad()
         elif isinstance(dns_record, dns.Record_AAAA): 
-            result =  "Name: {} - {}".format(rrheader.name,
-                                             socket.inet_ntop(socket.AF_INET6,
-                                                              dns_record.address))
+            result += socket.inet_ntop(socket.AF_INET6,
+                                       dns_record.address)
         else:
-            result = "Name: {} - {}".format(rrheader.name, dns_record.name)
+            result += str(dns_record.name.name.decode())
+        return result
+
+    def getDNSResponseLogMessage(self, response, protocol, message, address):
+        ans, _, _ = response
+        if len(message.queries) > 1:
+            raise RuntimeError("ERROR: received request with more than one query!"
+                    " cannot handle that!")
+        query = message.queries[0]
+        if len(ans) == 0:
+            return [ 'Request from - {}:{} - Query: {}:{} - Answer: NXDomain'.format(
+                        address[0], address[1], dns.QUERY_TYPES[query.type],
+                        query.name.name.decode()) ]
+        
+        result = []
+
+        for a in ans:
+            ans_string = self.getDNSAnswerRecordLog(a)
+            result.append('Request from - {}:{} - Query: {}:{} - Answer: {}'.format(
+                address[0], address[1], dns.QUERY_TYPES[query.type],
+                query.name.name.decode(), ans_string))
+
         return result
 
     def gotResolverResponse(self, response, protocol, message, address):
         ans, auth, add = response
+        log_messages = self.getDNSResponseLogMessage(response, protocol,
+                                                    message, address)
+        for m in log_messages:
+            self.logger.info(m)
         if len(ans) > 0:
-            
-            for a in ans:
-                ans_string = self.getAnswerDNSLogging(a)
-                self.logger.info("Received Request from '{}:{}'"
-                                 ", Reply: {}.".format(address[0], address[1], 
-                                                    ans_string))
-            
             # here we go to the parent as there is an answer
             return super().gotResolverResponse(response, protocol, message, address)
 
-        self.logger.info("Received Request from '{}:{}', Answer: NXDomain".format(address[0], address[1]))
         response = self._responseFromMessage(
                                 message=message, rCode=dns.ENAME,
                                 answers=ans, authority=auth, additional=add)
